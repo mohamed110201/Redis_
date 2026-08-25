@@ -1,103 +1,113 @@
 #include <stdio.h>
 #include <string.h>
-#include <ctype.h>
 #include <stdlib.h>
+#include <ctype.h>
 #ifdef _WIN32
 #include <fcntl.h>
 #include <io.h>
 #endif
-
+#define MAX_KEYS 1024
+#define MAX_LEN 256
 #define MAX_ARGS 64
-#define MAX_LINE 4096
 
-int parse_args(char *line, char *args[], int max_args)
-{
-    int count = 0;
-    int in_quotes = 0;
-    char *start = NULL;
-
-    for (char *p = line; *p && count < max_args; p++)
-    {
-        if (*p == '"' && !in_quotes)
-        {
-            in_quotes = 1;
-            start = p + 1;
-        }
-        else if (*p == '"' && in_quotes)
-        {
-            in_quotes = 0;
-            *p = '\0';
-            args[count++] = start;
-            start = NULL;
-        }
-        else if (*p == ' ' && !in_quotes)
-        {
-            if (start)
-            {
-                *p = '\0';
-                args[count++] = start;
-                start = NULL;
-            }
-        }
-        else if (!start)
-        {
-            start = p;
-        }
-    }
-    if (start)
-        args[count++] = start;
-    return count;
-}
-
-void str_toupper(char *s)
+void str_upper(char *s)
 {
     for (; *s; s++)
         *s = toupper(*s);
 }
 
-void handle_command(char *args[], int argc)
+int parse_args(char *line, char *args[])
 {
-    char cmd[256], reply[1024];
-    strncpy(cmd, args[0], sizeof(cmd) - 1);
-    str_toupper(cmd);
-    if (strcmp(cmd, "PING") == 0)
+    int count = 0;
+    int in_quotes = 0;
+    char *start = NULL;
+    char *out = line;
+    for (char *p = line;; p++)
     {
-        if (argc > 1)
+        int at_end = (*p == '\0');
+        if (*p == '"')
         {
-            snprintf(reply, sizeof(reply), "$%lu\r\n%s\r\n", strlen(args[1]), args[1]);
+            in_quotes = !in_quotes;
+            continue;
+        }
+        if ((*p == ' ' && !in_quotes) || at_end)
+        {
+            if (start)
+            {
+                *out = '\0';
+                args[count++] = start;
+                start = NULL;
+                out = p + 1;
+            }
+            if (at_end)
+                break;
         }
         else
         {
-            snprintf(reply, sizeof(reply), "+PONG\r\n");
+            if (!start)
+            {
+                start = out;
+            }
+            if (out != p)
+                *out = *p;
+            out++;
         }
-        printf("%s", reply);
-        fflush(stdout);
-        return;
     }
+    return count;
+}
 
-    printf("-ERR unknown command\r\n");
+void handle(char *args[], int argc)
+{
+    char cmd[MAX_LEN];
+    strncpy(cmd, args[0], MAX_LEN - 1);
+    cmd[MAX_LEN - 1] = '\0';
+    str_upper(cmd);
+
+    if (strcmp(cmd, "PING") == 0)
+    {
+        if (argc == 1)
+        {
+            printf("+PONG\r\n");
+        }
+        else
+        {
+            printf("$%d\r\n%s\r\n", (int)strlen(args[1]), args[1]);
+        }
+    }
+    else if (strcmp(cmd, "ECHO") == 0)
+    {
+        if (argc == 1)
+        {
+            return;
+        }
+        else
+        {
+            printf("$%d\r\n%s\r\n", (int)strlen(args[1]), args[1]);
+        }
+    }
+    else
+    {
+        printf("-ERR unknown command '%s'\r\n", args[0]);
+    }
     fflush(stdout);
 }
 
-int main()
+int main(void)
 {
-    char line[MAX_LINE];
+    char line[4096];
     char *args[MAX_ARGS];
-
 #ifdef _WIN32
     /* RESP uses literal CRLF; prevent Windows text-mode newline conversion. */
     _setmode(_fileno(stdout), _O_BINARY);
 #endif
-
     while (fgets(line, sizeof(line), stdin))
     {
-        /* trim newline */
         line[strcspn(line, "\r\n")] = '\0';
-        if (line[0] == '\0')
+        if (!line[0])
             continue;
-        int argc = parse_args(line, args, MAX_ARGS);
+        int argc = parse_args(line, args);
         if (argc > 0)
-            handle_command(args, argc);
+            handle(args, argc);
     }
     return 0;
 }
