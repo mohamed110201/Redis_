@@ -2,38 +2,76 @@
 #include <string.h>
 #include <ctype.h>
 #include <stdlib.h>
+#ifdef _WIN32
+#include <fcntl.h>
+#include <io.h>
+#endif
 
 #define MAX_ARGS 64
 #define MAX_LINE 4096
 
-int parse_args(char *line, char *args[], int max_args) {
+int parse_args(char *line, char *args[], int max_args)
+{
     int count = 0;
     int in_quotes = 0;
     char *start = NULL;
 
-    for (char *p = line; *p && count < max_args; p++) {
-        if (*p == '"' && !in_quotes) { in_quotes = 1; start = p + 1; }
-        else if (*p == '"' && in_quotes) { in_quotes = 0; *p = '\0'; args[count++] = start; start = NULL; }
-        else if (*p == ' ' && !in_quotes) {
-            if (start) { *p = '\0'; args[count++] = start; start = NULL; }
-        } else if (!start) { start = p; }
+    for (char *p = line; *p && count < max_args; p++)
+    {
+        if (*p == '"' && !in_quotes)
+        {
+            in_quotes = 1;
+            start = p + 1;
+        }
+        else if (*p == '"' && in_quotes)
+        {
+            in_quotes = 0;
+            *p = '\0';
+            args[count++] = start;
+            start = NULL;
+        }
+        else if (*p == ' ' && !in_quotes)
+        {
+            if (start)
+            {
+                *p = '\0';
+                args[count++] = start;
+                start = NULL;
+            }
+        }
+        else if (!start)
+        {
+            start = p;
+        }
     }
-    if (start) args[count++] = start;
+    if (start)
+        args[count++] = start;
     return count;
 }
 
-void str_toupper(char *s) {
-    for (; *s; s++) *s = toupper(*s);
+void str_toupper(char *s)
+{
+    for (; *s; s++)
+        *s = toupper(*s);
 }
 
-void handle_command(char *args[], int argc) {
-    char cmd[256];
+void handle_command(char *args[], int argc)
+{
+    char cmd[256], reply[1024];
     strncpy(cmd, args[0], sizeof(cmd) - 1);
     str_toupper(cmd);
-
-    if (strcmp(cmd, "PING") == 0) {
-        /* TODO: Print "+PONG\r\n" for no args */
-        /* TODO: Print bulk string for PING <message> */
+    if (strcmp(cmd, "PING") == 0)
+    {
+        if (argc > 1)
+        {
+            snprintf(reply, sizeof(reply), "$%lu\r\n%s\r\n", strlen(args[1]), args[1]);
+        }
+        else
+        {
+            snprintf(reply, sizeof(reply), "+PONG\r\n");
+        }
+        printf("%s", reply);
+        fflush(stdout);
         return;
     }
 
@@ -41,16 +79,25 @@ void handle_command(char *args[], int argc) {
     fflush(stdout);
 }
 
-int main() {
+int main()
+{
     char line[MAX_LINE];
     char *args[MAX_ARGS];
 
-    while (fgets(line, sizeof(line), stdin)) {
+#ifdef _WIN32
+    /* RESP uses literal CRLF; prevent Windows text-mode newline conversion. */
+    _setmode(_fileno(stdout), _O_BINARY);
+#endif
+
+    while (fgets(line, sizeof(line), stdin))
+    {
         /* trim newline */
         line[strcspn(line, "\r\n")] = '\0';
-        if (line[0] == '\0') continue;
+        if (line[0] == '\0')
+            continue;
         int argc = parse_args(line, args, MAX_ARGS);
-        if (argc > 0) handle_command(args, argc);
+        if (argc > 0)
+            handle_command(args, argc);
     }
     return 0;
 }
